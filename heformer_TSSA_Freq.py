@@ -40,7 +40,7 @@ TRAIN_RATIO, VAL_RATIO, TEST_RATIO = 0.6, 0.2, 0.2
 RANDOM_STATE = 42
 
 ENC_SEQ_LEN = 24
-DEC_SEQ_LEN = 36
+DEC_SEQ_LEN = 48
 
 D_MODEL = 256
 NHEAD = 8
@@ -110,8 +110,8 @@ class FreqBlock(nn.Module):
         mag_weight = self.freq_mlp(mag_flat)            # [B, F, C]
         mag_weight = mag_weight.transpose(1, 2)         # [B, C, F]
 
-        # 学习每个 (通道, 频率) 的增强因子 (sigmoid 限制在 [0,1])
-        mag_enhanced = X_mag * torch.sigmoid(mag_weight)
+        # 幅度增强: 1+tanh 范围 [0, 2], 可增可减
+        mag_enhanced = X_mag * (1.0 + torch.tanh(mag_weight))
 
         # 用增强幅度 + 原始相位重建复信号
         X_enhanced = mag_enhanced * torch.exp(1j * X_phase)
@@ -504,17 +504,15 @@ def evaluate_model(model, test_loader, scaler_dict, device):
     pred_original = target_scaler.inverse_transform(preds_flat).flatten()
     true_original = target_scaler.inverse_transform(targets_flat).flatten()
 
+    mse_val = mean_squared_error(true_original, pred_original)
     metrics = {
-        'mse': mean_squared_error(true_original, pred_original),
-        'rmse': np.sqrt(mean_squared_error(true_original, pred_original)),
+        'mse': mse_val,
+        'rmse': np.sqrt(mse_val),
         'mae': mean_absolute_error(true_original, pred_original),
         'r2': r2_score(true_original, pred_original)
     }
     print(f"测试集结果:")
-    print(f"  MSE:  {metrics['mse']:.4f}")
-    print(f"  RMSE: {metrics['rmse']:.4f}")
-    print(f"  MAE:  {metrics['mae']:.4f}")
-    print(f"  R²:   {metrics['r2']:.4f}")
+    print(f"  RMSE: {metrics['rmse']:.2f}°C | MAE: {metrics['mae']:.2f}°C | R²: {metrics['r2']:.4f}")
 
     exp_metrics = {}
     if all_exp_ids and len(all_exp_ids) > 0:
@@ -535,6 +533,36 @@ def evaluate_model(model, test_loader, scaler_dict, device):
 
 
 # ==================== 9. 可视化 ====================
+
+def plot_exp_metrics(exp_metrics, exp_id_mapping):
+    """绘制每个实验的指标对比图"""
+    if not exp_metrics:
+        print("没有实验级指标可绘制")
+        return
+    idx_to_exp = {v: k for k, v in exp_id_mapping.items()}
+    exp_indices = list(exp_metrics.keys())
+    exp_rmse = [exp_metrics[e]['rmse'] for e in exp_indices]
+    exp_mae = [exp_metrics[e]['mae'] for e in exp_indices]
+    exp_r2 = [exp_metrics[e]['r2'] for e in exp_indices]
+    exp_labels = [f"实验{idx_to_exp.get(int(e), e)}" for e in exp_indices]
+
+    plt.figure(figsize=(18, 6))
+    plt.subplot(1, 3, 1)
+    plt.bar(exp_labels, exp_rmse, color='skyblue')
+    plt.title('各实验RMSE'); plt.xlabel('实验'); plt.ylabel('RMSE')
+    plt.xticks(rotation=45); plt.grid(True, axis='y')
+    plt.subplot(1, 3, 2)
+    plt.bar(exp_labels, exp_mae, color='lightgreen')
+    plt.title('各实验MAE'); plt.xlabel('实验'); plt.ylabel('MAE')
+    plt.xticks(rotation=45); plt.grid(True, axis='y')
+    plt.subplot(1, 3, 3)
+    plt.bar(exp_labels, exp_r2, color='salmon')
+    plt.title('各实验R²'); plt.xlabel('实验'); plt.ylabel('R²')
+    plt.xticks(rotation=45); plt.grid(True, axis='y')
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUTPUT_DIR, 'experiment_metrics.png')); plt.close()
+    print("实验级指标图已保存")
+
 
 def plot_training_history(history):
     plt.figure(figsize=(12, 8))
@@ -767,6 +795,7 @@ if __name__ == '__main__':
     with open(HISTORY_SAVE_PATH, 'w') as f:
         json.dump(history, f)
     plot_training_history(history)
+    plot_exp_metrics(exp_metrics, exp_id_mapping)
     plot_error_analysis(pred_original, true_original)
     plot_predictions(model, test_loader, scaler_dict, device, num_examples=5)
     plot_full_series_comparison(model, test_exp_ids, df_original, scaler_dict, device,
