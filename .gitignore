@@ -3,9 +3,6 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 
-# 大体积模型权重（每个 10-20MB，忽略即可）
-*.pth
-
 # Claude Code 内部状态
 .superpowers/
 .claude/
