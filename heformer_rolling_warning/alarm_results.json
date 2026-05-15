@@ -1,0 +1,37 @@
+{
+  "2024600645": {
+    "actual_fails": false,
+    "actual_exceed_time": null,
+    "first_alarm_time": null,
+    "lead_time_min": null,
+    "total_alarms": 0.0
+  },
+  "2024700152": {
+    "actual_fails": false,
+    "actual_exceed_time": null,
+    "first_alarm_time": null,
+    "lead_time_min": null,
+    "total_alarms": 0.0
+  },
+  "2025600096": {
+    "actual_fails": false,
+    "actual_exceed_time": null,
+    "first_alarm_time": null,
+    "lead_time_min": null,
+    "total_alarms": 0.0
+  },
+  "2024700050": {
+    "actual_fails": false,
+    "actual_exceed_time": null,
+    "first_alarm_time": null,
+    "lead_time_min": null,
+    "total_alarms": 0.0
+  },
+  "2025600994": {
+    "actual_fails": true,
+    "actual_exceed_time": 84.58333333333333,
+    "first_alarm_time": 65.0,
+    "lead_time_min": 19.58333333333333,
+    "total_alarms": 6.0
+  }
+}
