@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# 训练输出目录（模型权重 + 生成图片 + 历史记录）
+heformer_direct_prediction/
+heformer_direct_TCN_prediction/
+heformer_early_warning/
+heformer_rolling_warning/
+heformer_tssa_fast/
+heformer_tssa_hybrid/
+heformer_tssa_ssa_prediction/
+heformer_tssa_tcn_prediction/
+heformer_tssa_tcn_v2/
+lstm_training_results_6_2_2/
+figure2/
+figure_and_SSA_VS_ISSA/
+
+# 模型和序列化文件（防止散落在根目录）
+*.pth
+*.pkl
+*.joblib
+
+# 数据集（体积大，不纳入版本管理）
+*.csv
+
+# 生成的图表
+*.png
+*.jpg
+*.svg
+
+# JSON 输出（训练历史等，散落在各目录的跳过，仅保留源码中的配置）
+history.json
+test_metrics.json
+alarm_results.json
+ssa_best_params.json
+
+# Claude Code 内部状态
+.superpowers/
+.claude/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
