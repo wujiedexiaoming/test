@@ -1,143 +1,126 @@
 # 对话上下文恢复文件
 
-> 生成时间: 2026-05-14  
-> 模型: deepseek-v4-pro[1m]  
+> 最后更新: 2026-05-15
+> 模型: deepseek-v4-pro[1m]
 > 项目: 防火涂料实验时序预测 + 滚动预警
 
 ---
 
 ## 1. 项目背景
 
-- 10次原始防火实验 + 9次新增真实实验 + 5次合成不合格实验 = **24个实验**
-- 每次实验 1441 点（5秒间隔，共 120 分钟）
-- 17 个特征: 13 个炉温传感器(value0_0~value0_12) + 2 个炉压(value2_0~2_1) + 1 个器件温度(value1_avg, 目标列) + 1 个负载(value3_0)
-- **不合格指标**: value1_avg 超过 538°C
+- 24个实验: 10原始 + 9新增真实 + 5合成不合格
+- 每次 1441 点（5秒间隔，120分钟）
+- 17特征: 13炉温 + 2炉压 + 1目标 + 1负载
+- **不合格**: value1_avg > 538°C
+- 真实不合格: 2023700310 (543.5°C, 119min)
 - **数据文件**: `C:\Users\28064\Desktop\2小时室内膨胀型防火涂料试验\姜丝_最终.csv`
-- **分析报告**: `SSA/value1_avg_analysis.md`
+- **环境**: `conda activate pytorch` (D:\Anaconda\envs\pytorch, Python 3.9, torch 2.3)
 
-## 2. 已创建的关键文件
+## 2. 关键参数约定
 
-### 时序预测模型 (heformer 系列)
+| 变体 | ENC | DEC | FFN | stride | 数据 |
+|------|-----|-----|-----|--------|------|
+| 短预测系列 (heformer_TSSA*.py) | 24(2min) | 36~48(3~4min) | 1024 | 1 | 姜丝.csv |
+| 滚动预警系列 (*_rolling.py) | 120(10min) | 360(30min) | 1024 | TRAIN=2 EVAL=60 | 姜丝_最终.csv |
 
+## 3. 完整文件清单
+
+### 短预测模型 (heformer 系列)
+| 文件 | Encoder | 说明 |
+|------|---------|------|
+| `heformer_TSSA.py` | TSSA | **基准**, stride=1, 原始数据 |
+| `heformer_TSSA_TCN.py` | TCN→PE→TSSA (串行) | TCN v1, 效果不好 |
+| `heformer_TSSA_TCN_v2.py` | PE→(TCN+Id)→TSSA (并行) | TCN v2, PE之后并行分支 |
+| `heformer_TSSA_Freq.py` | PE→(TSSA+Freq)→merge | 频域增强, 并行 |
+| `heformer_TSSA_fast.py` | TSSA | 基准+新数据+stride=12(已废弃) |
+| `heformer_direct.py` | 标准MHA | 标准Informer, O(n²) |
+
+### 滚动预警模型 (长预测, 120→360)
+| 文件 | Encoder | 说明 |
+|------|---------|------|
+| `heformer_TSSA_rolling_warning.py` | PE→(TCN5层+Id)→TSSA | **当前滚动版**, 含TCN |
+| `heformer_TSSA_TCN_rolling.py` | PE→(TCN7层+Id)→TSSA | TCN 7层, 感受野255 |
+| `heformer_TSSA_Freq_rolling.py` | PE→(FreqBlock+Id)→TSSA | 频域61bin增强 |
+| `heformer_TSSA_early_warning.py` | TSSA→分类头 | 第一版, 已废弃 |
+
+### 其他
 | 文件 | 说明 |
 |------|------|
-| `heformer_TSSA.py` | TSSA Transformer (O(n)注意力)，基准模型 |
-| `heformer_TSSA_fast.py` | TSSA + stride=12 窗口加速 + 新数据集 |
-| `heformer_TSSA_TCN.py` | TSSA + TCN (膨胀因果卷积) 编码器 |
-| `heformer_direct.py` | 标准 Informer Transformer |
-| `heformer_direct_TCN.py` | 标准 Transformer + TCN |
-
-### 早期预警系统
-
-| 文件 | 说明 |
-|------|------|
-| `heformer_TSSA_early_warning.py` | 第一版：30分钟快照 → 二分类(超/不超)。有 bug，已被滚动版取代 |
-| `heformer_TSSA_rolling_warning.py` | **滚动预警版**：每5分钟用过去10分钟预测未来30分钟，超538则报警 |
-
-### SSA 目录
-
-| 文件 | 说明 |
-|------|------|
-| `SSA/test.py` | SSA/ISSA 基准测试 |
-| `SSA/FDAL_SSA.py` | FDAL-SSA 改进版 |
-| `SSA/FDAL_SSA_原理说明.md` | FDAL-SSA 原理文档 |
-| `SSA/value1_avg_analysis.md` | 目标列数据分析报告 |
+| `heformer_direct_TCN.py` | 标准Transformer+TCN |
+| `SSA/FDAL_SSA.py` | FDAL-SSA 超参优化 |
+| `SSA/value1_avg_analysis.md` | 目标列分析报告 |
 | `SSA/rolling_warning_design.md` | 滚动预警设计文档 |
+| `SSA/context_restore.md` | **本文件** |
 
-### 数据与可视化
+## 4. 滚动预警系统架构
 
-| 路径 | 说明 |
-|------|------|
-| `姜丝_最终.csv` | 24实验完整数据 (含合成不合格) |
-| `figure/` | 各实验曲线图 |
-| `SSA/figure/` (原) | 原版分析图 |
-
-## 3. 滚动预警系统 (核心成果)
-
-**架构**:
 ```
 每5分钟 (t=10min起):
-  过去120步(10min) × 17特征 → TSSA Encoder → TSSA Decoder(start_token+360zeros)
-  → 预测360步(30min) value1_avg
-  → if max(预测) > 538: 报警
+  [t-120:t] × 17特征 → PE → (增强分支 + Identity) → TSSA×2 → Decoder → 360步预测
+  if max(预测) > 538: 报警
+
+Decoder: start_token + 360 zeros → TSSA Self + MHA Cross → 360步输出
 ```
 
-**配置**:
-- ENC_SEQ_LEN=120, DEC_SEQ_LEN=360
-- TRAIN_STRIDE=3 (训练窗口间隔)
-- EVAL_STRIDE=60 (评估/预测间隔 = 5分钟)
-- D_MODEL=256, DIM_FEEDFORWARD=1024 (4×标准)
-- 已换成原版 TSSA (来自 heformer_TSSA.py)
-
-**结果**: 测试集 1 不合格提前 25min 报警, 4 合格零误报
-
-## 4. 关键技术讨论
+## 5. 关键技术知识
 
 ### stride 原理
-- stride=1: 每个时间步取一个窗口，大量冗余但梯度更新多
-- stride=12: 每1分钟取一个，去冗余但样本少导致不收敛
-- 短窗口 (72步) 需要 stride=1; 长窗口 (480步) stride=12 可行
-- 训练 stride 和评估 stride 可不同: 训练密窗口，推理按5min
+- stride=1: 每个时间步取样, 大量冗余但梯度更新充分
+- 短窗口(72步)必须stride=1, 长窗口(480步)可用stride≥3
+- 训练stride和评估stride可不同
 
 ### TSSA 注意力
-- O(n) 复杂度，用 token 能量做重要性分数
-- 原版 TSSA: `nn.Linear(dim,dim)` 投影 + W²能量 + softmax + RMS输出
-- 滚动版自定义 TSSA 有 softmax 缩放 bug，已修
-- `attn_drop` 在原版和 TCN 版都定义但未用，TCN 版已修
-- 变量名 `qkv` 在 TCN 版已改为 `proj`
+- O(n)复杂度, 用token W²能量+softmax做重要性分数
+- 原版: `nn.Linear(dim,dim)` + L2规范化 + temp学习 + RMS输出
+- `attn_drop` 容易定义但未用 (已在TCN_rolling版修复)
+- 变量名 `qkv`→`proj` (已在TCN版修复)
 
 ### FFN 维度
-- 学术标准: 4× d_model (如 BERT: 768→3072, Informer: 512→2048)
-- 滚动版已从 256 改成 1024
+- **学术标准: 4× d_model**。全项目已统一为1024
 
-### 训练不收敛分析
-- 归一化尺度 0.0009 ≠ 不收敛，换算约 22°C RMSE
-- 30分钟预测误差 22°C 在物理上合理
-- 可做分段评估区分升温段 vs 稳定段误差
+### 合成不合格实验
+- 2025600991~0995: 基于物理模型(炉温+热响应系数α+时间常数τ)生成
+- 5种失效模式: 先天不良/渐进退化/中期退化/涂层开裂/严重失效
 
-## 5. 已修复的 Bug
+### TCN 设计要点
+- 放在PE之后(非之前), 并行分支(非串行)
+- 层数需匹配输入长度: 120步→7层(感受野255)
+
+### FreqBlock 要点
+- FFT在PE之后做(在嵌入空间)
+- 幅度增强用 `1.0+tanh` (可增可减), 非 `sigmoid` (只能减)
+- 标量gate初始化为0, 训练初期=纯TSSA
+- 120步→61个频率bin, 低频刻画升温主趋势
+
+## 6. 已修复的Bug汇总
 
 | 文件 | Bug | 状态 |
 |------|-----|------|
-| TSSA_TCN.py | TCN 层数只有 2 层 (应为 3) | ✅ 已修 |
-| TSSA_TCN.py | attn_drop 定义未使用 | ✅ 已修 |
-| TSSA_TCN.py | MSE 重复计算 | ✅ 已修 |
-| TSSA_TCN.py | plot_exp_metrics 缺失 | ✅ 已修 |
-| TSSA_TCN.py | PositionalEncoding 顺序错 | ✅ 已修 |
-| rolling_warning.py | 测试集打印归一化尺度而非°C | ✅ 已修 |
-| rolling_warning.py | 自定义 QKV TSSA → 已换回原版 | ✅ 已修 |
-| rolling_warning.py | FFN 256→1024 | ✅ 已修 |
-| rolling_warning.py | TSSA softmax 缩放反转 | ✅ 已修 |
-
-## 6. 合成不合格实验
-
-5 个合成实验 (2025600991~2025600995)，基于物理模型生成:
-- F1 (991): 涂层先天不良, max=555°C, 112min超温
-- F2 (992): 涂层渐进退化, max=599°C, 102min超温
-- F3 (993): 中期退化, max=594°C, 90min超温
-- F4 (994): 涂层开裂, max=631°C, 85min超温
-- F5 (995): 严重失效, max=730°C, 58min超温
-
-真实不合格: 2023700310, max=543.5°C, 119min超温 (仅超5.5°C, 持续1.2min)
+| TSSA_TCN.py | TCN层数2→3 | ✅ |
+| TSSA_TCN.py | attn_drop未用 | ✅ |
+| TSSA_TCN.py | MSE重复计算 | ✅ |
+| TSSA_TCN.py | plot_exp_metrics缺失 | ✅ |
+| TSSA_TCN.py | PositionalEncoding顺序 | ✅ |
+| TSSA_TCN.py | 变量名qkv→proj | ✅ |
+| TSSA_Freq.py | sigmoid→tanh | ✅ |
+| TSSA_Freq.py | 编辑残留`metrics={` | ✅ |
+| TSSA_Freq.py | gate.item()报错 | ✅ |
+| rolling_warning.py | 测试集打印尺度修正 | ✅ |
+| rolling_warning.py | 自写QKV TSSA→原版 | ✅ |
+| rolling_warning.py | FFN 256→1024 | ✅ |
 
 ## 7. 运行命令
 
 ```bash
-# 激活环境
 source /d/anaconda3/etc/profile.d/conda.sh && conda activate pytorch
 
-# 时序预测
+# 短预测
 python heformer_TSSA.py
-python heformer_TSSA_TCN.py
+python heformer_TSSA_TCN_v2.py
+python heformer_TSSA_Freq.py
 
-# 滚动预警
+# 滚动预警 (长预测)
 python heformer_TSSA_rolling_warning.py
+python heformer_TSSA_TCN_rolling.py
+python heformer_TSSA_Freq_rolling.py
 ```
-
-## 8. 待做事项
-
-- [ ] 滚动版分段评估 (升温段 vs 稳定段误差)
-- [ ] cross-validation 验证滚动预警稳定性
-- [ ] 降采样实验 (5s→30s, 减少序列长度)
-- [ ] 实验ID嵌入 (让模型区分不同实验特性)
-- [ ] TCN 版 LayerNorm → WeightNorm 对比
